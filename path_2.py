@@ -215,7 +215,7 @@ endD = startD + 10
 
 # Run the velocity-based move (tune speed_max / k_p as needed)
 move_to_point_with_velocity(endN, endE, endD,
-                            speed_max=10.0,   # try 2-3 m/s first for SITL
+                            speed_max=5.0,   # try 2-3 m/s first for SITL
                             speed_min=0.2,
                             k_p=0.6,
                             arrive_tol=0.6,
