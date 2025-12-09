@@ -1,0 +1,75 @@
+sim_vehicle.py -v ArduCopter -f quad   --custom-location=28.6315185,77.2949685,100,0   --out=127.0.0.1:14550 --out=127.0.0.1:14551
+
+
+
+ mavproxy.py --master tcp:127.0.0.1:5760 --out 127.0.0.1:14550 --out 127.0.0.1:14551
+
+
+
+28.631978327158098, 77.29512238718465
+
+
+copter version 4.7.0
+
+	ports	
+
+		./reset_sitl_gazebo.sh
+
+
+
+GAZEBO
+
+
+sudo apt install gazebo libgazebo11
+
+
+
+
+cd ardupilot/ArduCopter
+
+sim_vehicle.py -v ArduCopter -f gazebo-iris --custom-location=28.6315185,77.2949685,100,0  --console --map --out=127.0.0.1:14550 --out=127.0.0.1:14551
+
+
+ gazebo --verbose ~/ardupilot_gazebo/worlds/iris_arducopter_runway.world
+ 
+gazebo --verbose ~/ardupilot_gazebo/worlds/iris_arducopter_runway.worldardupilot-gazebo
+
+
+
+vehicle = connect('127.0.0.1:14550', wait_ready=True)
+
+
+
+
+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
+
+
+
+sim_vehicle.py -v ArduCopter -f gazebo-iris --custom-location=28.6316389,77.2950556,10,0 --console --out=127.0.0.1:14550 --out=127.0.0.1:14551
+
+
+
+
+less yam -> more roll
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
