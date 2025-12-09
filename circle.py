@@ -1,13 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
-AI TRANSCOM | Circular Flight Demo (Velocity Control)
-Demonstrates bitmask-controlled velocity flight:
-1. Arm and takeoff
-2. Fly a circular path using continuous velocity control (NED frame)
-3. Land
-"""
+
 
 from dronekit import connect, VehicleMode, LocationGlobalRelative
 from pymavlink import mavutil

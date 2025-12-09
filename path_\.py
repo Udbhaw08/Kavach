@@ -171,5 +171,19 @@ while vehicle.armed:
     print(" Alt:", vehicle.location.global_relative_frame.alt)
     time.sleep(1)
 
+# Get current local frame
+loc = vehicle.location.local_frame
+startN = loc.north
+startE = loc.east
+startD = loc.down
+
+# End target (relative example)
+endN = startN - 10
+endE = startE - 20
+endD = startD + 10
+
+move_to_point_with_velocity(endN, endE, endD, speed=3)
+
+
 print("Mission Complete. Vehicle Disarmed.")
 vehicle.close()
