@@ -13,7 +13,7 @@ copter version 4.7.0
 
 	ports	
 
-		./reset_sitl_gazebo.sh
+		./reset.sh
 
 
 
