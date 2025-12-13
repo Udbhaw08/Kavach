@@ -1,3 +1,20 @@
+PX4 
+
+	make px4_sitl gazebo-classic
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 sim_vehicle.py -v ArduCopter -f quad   --custom-location=28.6315185,77.2949685,100,0   --out=127.0.0.1:14550 --out=127.0.0.1:14551
 
 
@@ -12,7 +29,7 @@ sim_vehicle.py -v ArduCopter -f quad   --custom-location=28.6315185,77.2949685,1
 copter version 4.7.0
 
 	ports	
-
+		cd Kavach
 		./reset.sh
 
 
