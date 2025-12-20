@@ -17,16 +17,7 @@ navigation, and control logic in realistic simulation environments.
 - PX4-based flight control integration
 - Simulation-first development approach
 
----
 
-## Tech Stack
-- Python
-- OpenCV
-- YOLO-based Computer Vision
-- PX4 / MAVSDK
-- SITL / Gazebo Simulation
-
----
 ## Tech Stack
 
 ### Perception & AI
@@ -43,10 +34,14 @@ navigation, and control logic in realistic simulation environments.
 - Python
 
 ## System Overview
-1. Capture camera or simulation feed  
-2. Run perception and detection models  
-3. Generate navigation or control decisions  
-4. Send commands to PX4 flight controller  
+
+1. Camera feed captured from simulation or onboard source
+2. YOLO-based model performs real-time object detection
+3. Detection results processed using OpenCV
+4. Navigation and control commands generated
+5. Commands sent to PX4 via MAVSDK
+6. UAV behavior tested in SITL / Gazebo
+
 
 ---
 
