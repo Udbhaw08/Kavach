@@ -27,6 +27,20 @@ navigation, and control logic in realistic simulation environments.
 - SITL / Gazebo Simulation
 
 ---
+## Tech Stack
+
+### Perception & AI
+- YOLO (Object Detection)
+- OpenCV
+- Computer Vision
+
+### UAV & Autonomy
+- PX4 Autopilot
+- MAVSDK
+- SITL / Gazebo Simulation
+
+### Programming
+- Python
 
 ## System Overview
 1. Capture camera or simulation feed  
