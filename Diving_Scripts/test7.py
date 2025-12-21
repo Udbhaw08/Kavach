@@ -2,16 +2,16 @@ import asyncio
 import csv
 from datetime import datetime
 from mavsdk import System
-from mavsdk.offboard import OffboardError, VelocityNedYaw
+from mavsdk.offboard import OffboardError, VelocityBodyYawspeed
 
 # ================= CONFIG =================
 TAKEOFF_ALT = 10.0
 DIVE_ENTRY_ALT = 40.0
-ABORT_ALT = 4.0              # 🔴 Abort at 4 meters
+ABORT_ALT = 8.0
 
-DIVE_DOWN_VEL = 8.0          # 🔴 EXACT dive speed (m/s)
-FORWARD_VEL = 6.0            # Gives nose-down pitch
-CLIMB_VEL = -2.0             # Upward climb
+FORWARD_PRE_DIVE = 6.0
+FORWARD_DIVE = 8.0
+DIVE_DOWN_VEL = 8.0
 CONTROL_DT = 0.05
 
 latest_pos = None
@@ -19,7 +19,6 @@ latest_vel = None
 stop_tasks = False
 
 
-# ================= TELEMETRY =================
 async def position_listener(drone):
     global latest_pos, stop_tasks
     async for pos in drone.telemetry.position():
@@ -37,41 +36,31 @@ async def velocity_listener(drone):
 
 
 async def wait_until_armable(drone):
-    print("Waiting for vehicle to become armable...")
     async for health in drone.telemetry.health():
         if health.is_armable:
-            print("Vehicle is armable")
             return
         await asyncio.sleep(0.2)
 
 
-# ================= MAIN =================
 async def run():
     global latest_pos, latest_vel, stop_tasks
 
     drone = System()
     await drone.connect(system_address="udpin://0.0.0.0:14540")
 
-    print("Waiting for connection...")
     async for state in drone.core.connection_state():
         if state.is_connected:
-            print("Connected")
             break
 
     await wait_until_armable(drone)
 
-    # -------- MPC SAFETY (MUST MATCH DIVE SPEED) --------
-    await drone.param.set_param_float("MPC_Z_VEL_MAX_DN", 8.0)
-    await drone.param.set_param_float("MPC_Z_VEL_MAX_UP", 5.0)
-    await drone.param.set_param_float("MPC_XY_VEL_MAX", 12.0)
-    await drone.param.set_param_float("MPC_ACC_DOWN_MAX", 6.0)
+    # Safety params
+    await drone.param.set_param_float("MPC_Z_VEL_MAX_DN", DIVE_DOWN_VEL)
+    await drone.param.set_param_float("MPC_XY_VEL_MAX", 20.0)
     await asyncio.sleep(1.0)
 
-    # -------- ARM & TAKEOFF --------
-    print("Arming...")
+    # Arm & takeoff
     await drone.action.arm()
-
-    print("Taking off...")
     await drone.action.set_takeoff_altitude(TAKEOFF_ALT)
     await drone.action.takeoff()
 
@@ -79,87 +68,70 @@ async def run():
         if pos.relative_altitude_m >= TAKEOFF_ALT - 0.5:
             break
 
-    # -------- TELEMETRY TASKS --------
     pos_task = asyncio.create_task(position_listener(drone))
     vel_task = asyncio.create_task(velocity_listener(drone))
 
     while latest_pos is None or latest_vel is None:
         await asyncio.sleep(0.1)
 
-    # -------- OFFBOARD --------
-    await drone.offboard.set_velocity_ned(VelocityNedYaw(0, 0, 0, 0))
-    try:
-        await drone.offboard.start()
-    except OffboardError as e:
-        print(f"Offboard failed: {e}")
-        stop_tasks = True
-        return
+    # Offboard
+    await drone.offboard.set_velocity_body(VelocityBodyYawspeed(0, 0, 0, 0))
+    await drone.offboard.start()
 
-    # -------- CLIMB TO 40 m (CLOSED LOOP) --------
-    print("Climbing to dive entry altitude...")
-
+    # Climb
     while latest_pos.relative_altitude_m < DIVE_ENTRY_ALT - 0.5:
-        await drone.offboard.set_velocity_ned(
-            VelocityNedYaw(0, 0, CLIMB_VEL, 0)
+        await drone.offboard.set_velocity_body(
+            VelocityBodyYawspeed(0, 0, -3.0, 0)
         )
         await asyncio.sleep(CONTROL_DT)
 
-    # Stop climb
-    await drone.offboard.set_velocity_ned(VelocityNedYaw(0, 0, 0, 0))
-    await asyncio.sleep(1.5)
+    await drone.offboard.set_velocity_body(VelocityBodyYawspeed(0, 0, 0, 0))
+    await asyncio.sleep(1.0)
 
-    print("Reached dive entry altitude")
+    # Pre-dive (pitch build)
+    start = asyncio.get_event_loop().time()
+    while asyncio.get_event_loop().time() - start < 1.0:
+        await drone.offboard.set_velocity_body(
+            VelocityBodyYawspeed(FORWARD_PRE_DIVE, 0, 0, 0)
+        )
+        await asyncio.sleep(CONTROL_DT)
 
-    # -------- CONSTANT-SPEED DIVE --------
-    print("Starting constant-speed dive (8 m/s)")
+    # Dive
     log = []
-
     while True:
         alt = latest_pos.relative_altitude_m
-        v_down = latest_vel.down_m_s
+        vdown = latest_vel.down_m_s
 
-        await drone.offboard.set_velocity_ned(
-            VelocityNedYaw(
-                north_m_s=FORWARD_VEL,
-                east_m_s=0.0,
-                down_m_s=DIVE_DOWN_VEL,   # 🔴 CONSTANT 8 m/s
-                yaw_deg=0.0
-            )
+        await drone.offboard.set_velocity_body(
+            VelocityBodyYawspeed(FORWARD_DIVE, 0, DIVE_DOWN_VEL, 0)
         )
 
         log.append({
             "time": datetime.now().isoformat(),
-            "altitude_m": round(alt, 2),
-            "v_down_m_s": round(v_down, 2)
+            "altitude": round(alt, 2),
+            "v_down": round(vdown, 2)
         })
 
-        print(f"ALT {alt:5.1f} m | Vdown {v_down:5.1f} m/s", end="\r")
+        print(f"ALT {alt:5.1f} | Vdown {vdown:5.1f}", end="\r")
 
         if alt <= ABORT_ALT:
-            print("\nAbort altitude reached (4 m)")
             break
 
         await asyncio.sleep(CONTROL_DT)
 
-    # -------- EXIT --------
-    await drone.offboard.set_velocity_ned(VelocityNedYaw(0, 0, 0, 0))
+    await drone.offboard.set_velocity_body(VelocityBodyYawspeed(0, 0, 0, 0))
     await drone.action.hold()
 
     stop_tasks = True
-    await asyncio.sleep(0.5)
-
     pos_task.cancel()
     vel_task.cancel()
 
-    if log:
-        filename = f"dive_8ms_abort4m_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        with open(filename, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=log[0].keys())
-            writer.writeheader()
-            writer.writerows(log)
-        print(f"Log saved to {filename}")
+    with open(f"dive_log_{datetime.now().strftime('%H%M%S')}.csv", "w") as f:
+        writer = csv.DictWriter(f, fieldnames=log[0].keys())
+        writer.writeheader()
+        writer.writerows(log)
 
-    print("Mission complete — exiting cleanly")
+    print("\nMission complete")
 
 
 if __name__ == "__main__":
