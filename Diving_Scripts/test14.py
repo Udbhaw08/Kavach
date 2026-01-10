@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 import asyncio
+import math
 from mavsdk import System
 from mavsdk.offboard import (
     OffboardError,
     VelocityNedYaw,
-    PositionNedYaw
+    PositionNedYaw,
+    Attitude
 )
 
 # ---------------- CONFIG ----------------
@@ -12,6 +14,10 @@ TAKEOFF_ALT = 5.0
 TARGET_ALT = 70.0
 CLIMB_RATE = -6.0          # m/s (negative = UP)
 OFFBOARD_RATE = 0.1        # 10 Hz
+
+ATTITUDE_DURATION = 10.0   # seconds
+PITCH_DEG = -10.0          # nose down
+THRUST = 0.6               # hover-ish
 # ----------------------------------------
 
 
@@ -29,17 +35,29 @@ async def wait_for_position_lock(drone):
             return
 
 
+async def arm_if_needed(drone):
+    async for armed in drone.telemetry.armed():
+        if armed:
+            print("ℹ️ Vehicle already armed")
+            return
+        break
+
+    print("🚁 Arming...")
+    await drone.action.arm()
+    print("✅ Armed")
+
+
 async def main():
     drone = System()
-    await drone.connect(system_address="udpin://0.0.0.0:14540")
+    await drone.connect(system_address="udpin://127.0.0.1:14540")
 
     await wait_for_connection(drone)
     await wait_for_position_lock(drone)
 
-    # -------- Arm & Takeoff --------
-    print("🚁 Arming...")
-    await drone.action.arm()
+    # -------- ARM --------
+    await arm_if_needed(drone)
 
+    # -------- TAKEOFF --------
     print(f"⬆️ Taking off to {TAKEOFF_ALT} m...")
     await drone.action.set_takeoff_altitude(TAKEOFF_ALT)
     await drone.action.takeoff()
@@ -49,55 +67,71 @@ async def main():
             print("✅ Takeoff altitude reached")
             break
 
-    # -------- ENTER OFFBOARD (POSITION FIRST) --------
+    # -------- ENTER OFFBOARD --------
     print("📡 Initializing Offboard with position hold...")
-
     for _ in range(15):
         await drone.offboard.set_position_ned(
-            PositionNedYaw(
-                north_m=0.0,
-                east_m=0.0,
-                down_m=-TAKEOFF_ALT,
-                yaw_deg=0.0
-            )
+            PositionNedYaw(0.0, 0.0, -TAKEOFF_ALT, 0.0)
         )
         await asyncio.sleep(OFFBOARD_RATE)
 
     try:
         await drone.offboard.start()
-        print("✅ Offboard started successfully")
+        print("✅ Offboard started")
     except OffboardError as e:
         print(f"❌ Offboard failed: {e}")
         return
 
-    # -------- SWITCH TO VELOCITY CONTROL --------
-    print("⬆️ Climbing toward 20 m at 6 m/s")
-
-    reached = False
-    while not reached:
+    # -------- CLIMB --------
+    print(f"⬆️ Climbing to {TARGET_ALT} m")
+    while True:
         await drone.offboard.set_velocity_ned(
-            VelocityNedYaw(
-                north_m_s=0.0,
-                east_m_s=0.0,
-                down_m_s=CLIMB_RATE,
-                yaw_deg=0.0
-            )
+            VelocityNedYaw(0.0, 0.0, CLIMB_RATE, 0.0)
         )
 
         async for pos in drone.telemetry.position():
             print(f"📏 Altitude: {pos.relative_altitude_m:.2f} m")
             if pos.relative_altitude_m >= TARGET_ALT - 0.5:
-                reached = True
+                break
+            break
+
+        if pos.relative_altitude_m >= TARGET_ALT - 0.5:
             break
 
         await asyncio.sleep(OFFBOARD_RATE)
 
     # -------- HOLD --------
-    print("🛑 Holding position at 20 m")
+    print("🛑 Holding altitude")
     await drone.offboard.set_velocity_ned(
         VelocityNedYaw(0.0, 0.0, 0.0, 0.0)
     )
+    await asyncio.sleep(2)
 
+    # -------- ATTITUDE TEST --------
+    print("🧭 Attitude control test")
+    pitch_rad = math.radians(PITCH_DEG)
+
+    start_time = asyncio.get_event_loop().time()
+    while asyncio.get_event_loop().time() - start_time < ATTITUDE_DURATION:
+        await drone.offboard.set_attitude(
+            Attitude(
+                0.0,            # roll (rad)
+                pitch_rad,      # pitch (rad)
+                0.0,            # yaw (rad)
+                THRUST          # thrust (0–1)
+            )
+        )
+        await asyncio.sleep(OFFBOARD_RATE)
+
+    # -------- NEUTRAL --------
+    print("🛑 Returning to neutral attitude")
+    for _ in range(20):
+        await drone.offboard.set_attitude(
+            Attitude(0.0, 0.0, 0.0, THRUST)
+        )
+        await asyncio.sleep(OFFBOARD_RATE)
+
+    print("✅ Attitude test complete")
     while True:
         await asyncio.sleep(1)
 
