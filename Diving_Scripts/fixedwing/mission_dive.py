@@ -19,19 +19,26 @@ import csv
 import math
 from datetime import datetime
 from mavsdk import System
-from mavsdk.offboard import OffboardError, VelocityNedYaw, PositionNedYaw
+from mavsdk.offboard import OffboardError, VelocityNedYaw, PositionNedYaw, Attitude
 
 # ================= FIXED-WING CONFIGURATION =================
-TARGET_ALTITUDE = 70.0        # meters AGL
+#TARGET_ALTITUDE = 70.0        # meters AGL
 LOITER_RADIUS = 50.0          # meters (orbit radius)
 LOITER_DURATION = 5.0         # seconds (cannot truly "hover")
-DIVE_ANGLE_DEG = 35.0         # degrees from horizontal
-DESCENT_SPEED = 5.0           # m/s (downward velocity)
-CRUISE_SPEED = 15.0           # m/s (typical fixed-wing cruise)
-MIN_SAFE_ALTITUDE = 5.0       # pull-up altitude
-MAX_PITCH_DOWN = 45.0         # degrees (dive pitch limit)
+#DIVE_ANGLE_DEG = 35.0         # degrees from horizontal
+#DESCENT_SPEED = 5.0           # m/s (downward velocity)
+#CRUISE_SPEED = 15.0           # m/s (typical fixed-wing cruise)
+#MIN_SAFE_ALTITUDE = 5.0       # pull-up altitude
+MAX_PITCH_DOWN = 60.0         # degrees (dive pitch limit, matches FW_P_LIM_MIN)
 CONTROL_RATE = 0.1            # 10Hz control loop (fixed-wing slower)
 
+
+TARGET_ALTITUDE = 150.0    # m (higher = more dive distance)
+DIVE_ANGLE_DEG = 45.0      # degrees (steeper)
+DESCENT_SPEED = 8.0        # m/s (faster)
+MIN_SAFE_ALTITUDE = 10.0   # m (higher safety margin)
+CRUISE_SPEED = 18.0        # m/s (faster cruise)
+DIVE_HEADING_DEG = 270.0   # degrees (heading for dive - set to avoid terrain!)
 # ================= GLOBAL STATE =================
 latest_pos = None
 latest_vel = None
@@ -65,6 +72,40 @@ async def attitude_listener(drone):
         if stop_tasks:
             break
         latest_attitude = attitude
+
+
+# ================= PARAMETER MANAGEMENT =================
+async def backup_parameters(drone, param_names):
+    """Backup current parameter values"""
+    backup = {}
+    for param in param_names:
+        try:
+            result = await drone.param.get_param_float(param)
+            backup[param] = result
+            print(f"   📋 Backed up {param} = {result:.2f}")
+        except Exception as e:
+            print(f"   ⚠️  Failed to backup {param}: {e}")
+    return backup
+
+
+async def set_parameters(drone, params):
+    """Set PX4 parameters"""
+    for param, value in params.items():
+        try:
+            await drone.param.set_param_float(param, value)
+            print(f"   ✏️  Set {param} = {value:.2f}")
+        except Exception as e:
+            print(f"   ⚠️  Failed to set {param}: {e}")
+
+
+async def restore_parameters(drone, backup):
+    """Restore parameters from backup"""
+    for param, value in backup.items():
+        try:
+            await drone.param.set_param_float(param, value)
+            print(f"   ↩️  Restored{param} = {value:.2f}")
+        except Exception as e:
+            print(f"   ⚠️  Failed to restore {param}: {e}")
 
 
 # ================= SAFETY & HEALTH =================
@@ -204,13 +245,13 @@ async def phase_loiter(drone):
         
         await asyncio.sleep(CONTROL_RATE)
     
-    # Calculate target position at 35° angle
+    # Calculate target position at dive angle
     current_alt = latest_pos.relative_altitude_m
     angle_rad = math.radians(DIVE_ANGLE_DEG)
     horizontal_dist = current_alt / math.tan(angle_rad)
     
-    # Get current heading to place target ahead
-    heading_rad = math.radians(latest_attitude.yaw_deg) if latest_attitude else 0.0
+    # Use configured dive heading (to avoid terrain!)
+    heading_rad = math.radians(DIVE_HEADING_DEG)
     
     # Calculate target coordinates (simplified - assumes flat earth)
     # In real implementation, use proper geodetic calculations
@@ -220,7 +261,7 @@ async def phase_loiter(drone):
     print(f"\n🎯 Target calculated:")
     print(f"   Angle: {DIVE_ANGLE_DEG}° from horizontal")
     print(f"   Distance: {horizontal_dist:.1f}m")
-    print(f"   Heading: {latest_attitude.yaw_deg:.1f}°")
+    print(f"   Dive Heading: {DIVE_HEADING_DEG:.1f}° (configured to avoid terrain)")
     
     return target_north, target_east
 
@@ -238,16 +279,13 @@ async def phase_dive(drone, target_north, target_east):
     # Start offboard mode for dive control
     print("🎮 Starting OFFBOARD mode for dive...")
     
-    # Calculate dive velocity components
-    angle_rad = math.radians(DIVE_ANGLE_DEG)
-    forward_speed = DESCENT_SPEED / math.tan(angle_rad)
+    print(f"   Pitch Target: -{DIVE_ANGLE_DEG}°")
+    print(f"   Yaw Target: {DIVE_HEADING_DEG}°")
+    print(f"   Thrust: 0.6 (Aggressive)")
     
-    print(f"   Descent: {DESCENT_SPEED:.1f} m/s")
-    print(f"   Forward: {forward_speed:.1f} m/s")
-    
-    # Initialize offboard with current velocity
-    await drone.offboard.set_velocity_ned(
-        VelocityNedYaw(forward_speed, 0.0, DESCENT_SPEED, 0.0)
+    # Initialize offboard with attitude
+    await drone.offboard.set_attitude(
+        Attitude(0.0, -DIVE_ANGLE_DEG, DIVE_HEADING_DEG, 0.6)
     )
     
     try:
@@ -256,7 +294,6 @@ async def phase_dive(drone, target_north, target_east):
     except OffboardError as e:
         print(f"⚠️  Offboard failed: {e}")
         print("   Continuing with mission mode...")
-        # Fixed-wing can continue in mission mode if offboard fails
     
     while True:
         alt = latest_pos.relative_altitude_m
@@ -277,27 +314,26 @@ async def phase_dive(drone, target_north, target_east):
         
         # Display progress
         pitch = latest_attitude.pitch_deg if latest_attitude else 0.0
+        yaw = latest_attitude.yaw_deg if latest_attitude else 0.0
         v_down = latest_vel.down_m_s if latest_vel else 0.0
-        print(f"⬇️  ALT {alt:5.1f} m | Vz {v_down:5.1f} m/s | Pitch {pitch:5.1f}°", end="\r")
+        print(f"⬇️  ALT {alt:5.1f} m | Vz {v_down:5.1f} m/s | Pitch {pitch:5.1f}° | Yaw {yaw:5.1f}°", end="\r")
         
         # Exit condition: reached abort altitude
         if alt <= MIN_SAFE_ALTITUDE:
             print(f"\n✅ Pull-up altitude reached: {alt:.1f}m")
             break
         
-        # Command dive velocity (fixed-wing will pitch down naturally)
+        # Command dive attitude
         try:
-            heading_deg = latest_attitude.yaw_deg if latest_attitude else 0.0
-            await drone.offboard.set_velocity_ned(
-                VelocityNedYaw(
-                    north_m_s=forward_speed,
-                    east_m_s=0.0,
-                    down_m_s=DESCENT_SPEED,
-                    yaw_deg=heading_deg
+            await drone.offboard.set_attitude(
+                Attitude(
+                    roll_deg=0.0,
+                    pitch_deg=-DIVE_ANGLE_DEG,
+                    yaw_deg=DIVE_HEADING_DEG,
+                    thrust_value=0.6
                 )
             )
         except:
-            # If offboard fails, continue monitoring
             pass
         
         await asyncio.sleep(CONTROL_RATE)
@@ -372,6 +408,24 @@ async def run():
     # Wait for armable
     await wait_until_armable(drone)
     
+    # Configure aggressive PX4 parameters for dive mission
+    print("\n⚙️  Configuring PX4 parameters for aggressive dive...")
+    aggressive_params = {
+        "FW_T_SINK_MAX": 15.0,      # Max sink rate (default ~5 m/s)
+        "FW_P_LIM_MIN": -60.0,       # Max pitch down (default -45°)
+        "FW_AIRSPD_MAX": 30.0,       # Max airspeed (default 20 m/s)
+        "FW_AIRSPD_MIN": 5.0,        # Min airspeed (allow slow dive entry)
+    }
+    
+    # Backup current parameters
+    print("📦 Backing up current parameters...")
+    param_backup = await backup_parameters(drone, list(aggressive_params.keys()))
+    
+    # Set aggressive parameters
+    print("🚀 Setting aggressive parameters...")
+    await set_parameters(drone, aggressive_params)
+    print("✅ Parameters configured for Test 2: Moderate Aggression")
+    
     # Start telemetry listeners
     print("\n📡 Starting telemetry listeners...")
     pos_task = asyncio.create_task(position_listener(drone))
@@ -431,6 +485,12 @@ async def run():
             await drone.action.hold()
         except:
             pass
+        
+        # Restore original parameters
+        if 'param_backup' in locals() and param_backup:
+            print("\n🔧 Restoring original PX4 parameters...")
+            await restore_parameters(drone, param_backup)
+            print("✅ Parameters restored")
         
         # Stop telemetry tasks
         stop_tasks = True

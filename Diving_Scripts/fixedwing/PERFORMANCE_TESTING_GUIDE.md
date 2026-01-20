@@ -144,25 +144,77 @@ CRUISE_SPEED = 25.0        # m/s
 
 ## 🔧 How to Modify PX4 Parameters
 
-You can adjust PX4 parameters via the PX4 console or QGroundControl:
+> [!WARNING]
+> **CRITICAL**: The default `mission_dive.py` script NOW AUTOMATICALLY sets aggressive parameters!
+> The script backs up, modifies, and restores parameters for you. Manual parameter modification is only needed for custom configurations.
+
+### Automatic Parameter Configuration (Recommended)
+
+The fixed-wing dive script automatically sets these aggressive parameters:
+
+```python
+# These are set automatically by mission_dive.py
+aggressive_params = {
+    "FW_T_SINK_MAX": 15.0,      # Max sink rate (default 2.7 m/s)
+    "FW_P_LIM_MIN": -60.0,       # Max pitch down (default -15.0°)
+    "FW_AIRSPD_MAX": 30.0,       # Max airspeed (default 20.0 m/s)
+}
+```
+
+### Default PX4 Parameters for plane_cam
+
+These are the **actual default values** for the plane_cam model:
+
+| Parameter | Default Value | What It Limits |
+|-----------|---------------|----------------|
+| `FW_T_SINK_MAX` | **2.7 m/s** | Maximum descent rate |
+| `FW_P_LIM_MIN` | **-15.0°** | Maximum pitch down (dive angle) |
+| `FW_P_LIM_MAX` | **+45.0°** | Maximum pitch up |
+| `FW_AIRSPD_MAX` | **20.0 m/s** | Maximum airspeed |
+| `FW_AIRSPD_MIN` | **10.0 m/s** | Minimum airspeed (stall) |
+| `FW_T_CLMB_MAX` | **5.0 m/s** | Maximum climb rate |
+
+> [!CAUTION]
+> **Without modifying these parameters**, your commanded 8 m/s descent will be LIMITED to ~2.5 m/s!
+
+### Manual Parameter Modification (Optional)
+
+If you want to set custom parameters beyond the script defaults:
 
 **Via PX4 Shell (SITL):**
 ```bash
 # View current value
-param show FW_AIRSPD_MAX
+param show FW_T_SINK_MAX
 
 # Set new value
-param set FW_AIRSPD_MAX 30.0
+param set FW_T_SINK_MAX 15.0
+param set FW_P_LIM_MIN -60.0
 
-# Save parameters
+# Save parameters (persists across restarts)
 param save
 ```
 
 **Via MAVSDK (in Python):**
 ```python
-await drone.param.set_param_float("FW_AIRSPD_MAX", 30.0)
+# Backup original value
+original = await drone.param.get_param_float("FW_T_SINK_MAX")
+
+# Set aggressive value
+await drone.param.set_param_float("FW_T_SINK_MAX", 15.0)
 await drone.param.set_param_float("FW_P_LIM_MIN", -60.0)
+
+# ... run mission ...
+
+# Restore original
+await drone.param.set_param_float("FW_T_SINK_MAX", original)
 ```
+
+### Why Automatic Configuration is Better
+
+✅ **Safety**: Always restores original parameters  
+✅ **Convenience**: No manual PX4 shell commands needed  
+✅ **Consistency**: Same configuration every test run  
+✅ **Documentation**: Parameters logged in console output
 
 ---
 
