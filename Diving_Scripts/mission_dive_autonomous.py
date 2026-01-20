@@ -23,11 +23,11 @@ from mavsdk.offboard import OffboardError, VelocityNedYaw
 
 # ================= CONFIGURATION =================
 TAKEOFF_ALTITUDE = 70.0       # meters
-ASCENT_SPEED = 6.0            # m/s (upward, negative in NED)
+ASCENT_SPEED = 6.5            # m/s (upward, negative in NED)
 HOVER_DURATION = 5.0          # seconds
-DIVE_ANGLE_DEG = 35.0         # degrees from horizontal
-DESCENT_SPEED = 5.0           # m/s (downward, positive in NED)
-MIN_SAFE_ALTITUDE = 5.0       # abort floor
+DIVE_ANGLE_DEG = 8.0         # degrees from horizontal
+DESCENT_SPEED = 20.0           # m/s (downward, positive in NED)
+MIN_SAFE_ALTITUDE = 1.0       # abort floor
 MAX_TILT_ANGLE = 55.0         # degrees (safety limit, allows 35° dive)
 CONTROL_RATE = 0.05           # 20Hz control loop (50ms)
 
@@ -84,7 +84,7 @@ async def configure_aggressive_params(drone):
     # Backup original values for restoration later
     params_to_set = [
         ("MPC_Z_VEL_MAX_UP", 8.0),    # Allow 6+ m/s ascent
-        ("MPC_Z_VEL_MAX_DN", 6.0),    # Allow 5 m/s descent
+        ("MPC_Z_VEL_MAX_DN", 10.0),    # Allow 5 m/s descent
         ("MPC_TILTMAX_AIR", 50.0),    # Allow dive angle
         ("MPC_XY_VEL_MAX", 10.0),     # Forward speed during dive
         ("MPC_ACC_DOWN_MAX", 6.0),    # Aggressive descent accel
@@ -252,17 +252,12 @@ async def phase_hover_and_target(drone):
 
 
 async def phase_dive(drone, target_north, target_east):
-    """
-    Phase 3: Controlled Dive
-    Dive toward target at 5 m/s descent speed
-    """
+
     print("\n" + "="*50)
-    print("⚡ PHASE 3: CONTROLLED DIVE")
+    print("PHASE 3:  DIVE")
     print("="*50)
     print(f"Diving at {DESCENT_SPEED} m/s descent, {DIVE_ANGLE_DEG}° angle")
-    
-    # Calculate velocity components
-    # For 35° dive: vertical = 5 m/s, horizontal = 5 / tan(35°) ≈ 7.14 m/s
+
     angle_rad = math.radians(DIVE_ANGLE_DEG)
     forward_speed = DESCENT_SPEED / math.tan(angle_rad)
     
@@ -284,7 +279,7 @@ async def phase_dive(drone, target_north, target_east):
         # Safety check
         is_safe, reason = check_safety_abort(alt, latest_attitude)
         if not is_safe:
-            print(f"\n⚠️  SAFETY ABORT: {reason}")
+            print(f"\n SAFETY ABORT: {reason}")
             break
         
         # Log telemetry
