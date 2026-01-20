@@ -28,8 +28,8 @@ Wait for Gazebo to load completely (plane should be on runway).
 ### Step 2: Run Mission
 
 ```bash
-cd /home/udbhaw/Kavach/Diving_Scripts
-python3 mission_dive_fixedwing.py
+cd /home/udbhaw/Kavach/Diving_Scripts/fixedwing
+python3 mission_dive.py
 ```
 
 ### Step 3: Observe
@@ -75,7 +75,7 @@ MIN_SAFE_ALTITUDE = 5.0       # Pull-up altitude
 ## 📊 Output
 
 ### Log File
-`mission_dive_fixedwing_YYYYMMDD_HHMMSS.csv`
+`../logs/mission_dive_fixedwing_YYYYMMDD_HHMMSS.csv`
 
 **Fields:**
 - `timestamp`, `phase`, `altitude_m`
@@ -117,8 +117,8 @@ MIN_SAFE_ALTITUDE = 5.0       # Pull-up altitude
 
 ## 📁 Files
 
-- **[mission_dive_fixedwing.py](file:///home/udbhaw/Kavach/Diving_Scripts/mission_dive_fixedwing.py)** - Main script (NEW)
-- **[mission_dive_autonomous.py](file:///home/udbhaw/Kavach/Diving_Scripts/mission_dive_autonomous.py)** - Quadcopter version (original)
+- **[mission_dive.py](file:///home/udbhaw/Kavach/Diving_Scripts/fixedwing/mission_dive.py)** - Main script (NEW)
+- **[mission_dive.py](file:///home/udbhaw/Kavach/Diving_Scripts/multicopter/mission_dive.py)** - Quadcopter version (original)
 
 ---
 

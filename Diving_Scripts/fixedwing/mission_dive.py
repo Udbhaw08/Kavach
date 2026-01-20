@@ -441,7 +441,7 @@ async def run():
         
         # Save log
         if mission_log:
-            filename = f"mission_dive_fixedwing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            filename = f"../logs/mission_dive_fixedwing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
             with open(filename, "w", newline="") as f:
                 writer = csv.DictWriter(f, fieldnames=mission_log[0].keys())
                 writer.writeheader()

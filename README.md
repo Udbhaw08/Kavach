@@ -33,21 +33,38 @@ navigation, and control logic in realistic simulation environments.
 ### Programming
 - Python
 
-## System Overview
 
-1. Camera feed captured from simulation or onboard source
-2. YOLO-based model performs real-time object detection
-3. Detection results processed using OpenCV
-4. Navigation and control commands generated
-5. Commands sent to PX4 via MAVSDK
-6. UAV behavior tested in SITL / Gazebo
+## 📂 System Components
 
+### 1. [Autonomous Dive Missions](./Diving_Scripts)
+Advanced autonomous maneuver simulations for tactical scenarios.
+
+| Vehicle Type | Model | Key Behaviors |
+|--------------|-------|---------------|
+| **Multicopter** | `typhoon_h480` | High-speed ascent (6m/s), Hover stability, 35° Dive |
+| **Fixed-Wing** | `plane_cam` | Runway takeoff, Loiter orbit, High-speed Dive |
+
+**Key Features:**
+- Modular mission architecture
+- Automated safety checks (Altitude floor, Tilt limits)
+- Comprehensive telemetry logging (`logs/` directory)
+
+[👉 View Full Documentation](./Diving_Scripts/README.md)
 
 ---
 
-## Project Status
-🚧 Experimental & research-focused  
-Used for testing autonomy concepts and control strategies.
+## 🏗️ Project Structure
+
+```text
+Kavach/
+├── Diving_Scripts/        # Autonomous maneuver logic
+│   ├── multicopter/       # Quadcopter-specific missions
+│   ├── fixedwing/         # Plane-specific missions
+│   ├── logs/              # Mission telemetry logs
+│   └── legacy/            # Archived tests
+├── models/                # Custom Gazebo models
+└── README.md              # Project documentation
+```
 
 ---
 
