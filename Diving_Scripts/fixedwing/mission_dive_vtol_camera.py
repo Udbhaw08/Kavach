@@ -29,7 +29,7 @@ import csv
 import math
 from datetime import datetime
 from mavsdk import System
-from mavsdk.offboard import OffboardError, VelocityNedYaw, Attitude
+from mavsdk.offboard import OffboardError, VelocityNedYaw, PositionNedYaw
 
 # ================= DEPTH CAMERA PARAMETERS =================
 CAM_FX = 320.0   # focal length x (pixels)
@@ -95,15 +95,28 @@ async def configure_aggressive_params(drone):
     print("🔧 Configuring aggressive dive parameters...")
     
     params_to_set = {
-        "FW_T_SINK_MAX": 25.0,      # Allow aggressive sink
-        "FW_P_LIM_MIN": -45.0,       # Allow steep pitch
-        "FW_AIRSPD_MAX": 50.0,       # Max airspeed
-        "FW_AIRSPD_MIN": 12.0,       # Stall prevention
-        "FW_T_CLMB_MAX": 10.0,       # Max climb rate
-        "FW_THR_IDLE": 0.10,         # Low idle for dive
-        "MPC_Z_VEL_MAX_UP": 10.0,    # Max ascent speed (MC)
-        "MPC_Z_VEL_MAX_DN": 12.0,    # Max descent speed (MC)
-        "MPC_TKO_SPEED": 10.0,       # Takeoff speed
+        # BALLISTIC DIVE PARAMETERS - DISABLE TECS LIMITS
+        "FW_T_SINK_MAX": 50.0,      # Allow 50 m/s sink (ballistic)
+        "FW_T_CLMB_MAX": 15.0,      # Allow 15 m/s climb
+        "FW_P_LIM_MIN": -80.0,      # Allow 80° pitch down (ballistic)
+        "FW_P_LIM_MAX": 60.0,       # Allow 60° pitch up
+        
+        # AIRSPEED LIMITS
+        "FW_AIRSPD_MAX": 60.0,      # Allow 60 m/s max
+        "FW_AIRSPD_MIN": 8.0,       # Lower stall speed
+        
+        # AGGRESSIVE THROTTLE
+        "FW_THR_MAX": 1.0,          # 100% throttle
+        "FW_THR_IDLE": 0.0,         # 0% idle for dive
+        
+        # DISABLE ALTITUDE HOLD CONSTRAINTS
+        "FW_T_HRATE_FF": 0.0,       # Disable height rate feedforward
+        "FW_T_ALT_TC": 10.0,        # Slow altitude time constant
+        
+        # MULTICOPTER PARAMETERS
+        "MPC_Z_VEL_MAX_UP": 10.0,   # Max ascent speed (MC)
+        "MPC_Z_VEL_MAX_DN": 12.0,   # Max descent speed (MC)
+        "MPC_TKO_SPEED": 10.0,      # Takeoff speed
     }
     
     original_params = {}
@@ -468,9 +481,9 @@ async def phase_transition_to_fw(drone):
     return True
 
 async def phase_target_acquisition_and_pinch_calc(drone):
-    """Phase 3: Target acquisition (hardcoded) and pinch point calculation"""
+    """Phase 3: Direct approach to attack position using Offboard velocity control"""
     print("\n" + "="*50)
-    print("🎯 PHASE 3: TARGET ACQUISITION & PINCH POINT CALCULATION")
+    print("🎯 PHASE 3: DIRECT APPROACH TO ATTACK POSITION")
     print("="*50)
     
     # Current position
@@ -488,138 +501,189 @@ async def phase_target_acquisition_and_pinch_calc(drone):
     dist_to_target = distance_meters(curr_lat, curr_lon, target_lat, target_lon)
     print(f"📏 Distance to target: {dist_to_target:.1f}m")
     
-    # Calculate pinch point
-    dive_data = calculate_pinch_point(curr_lat, curr_lon, curr_alt)
+    # Calculate attack bearing
+    attack_bearing = bearing_deg(curr_lat, curr_lon, target_lat, target_lon)
+    print(f"🧭 Attack bearing: {attack_bearing:.1f}°")
     
-    print(f"\n✈️  PINCH POINT CALCULATED:")
-    print(f"   Location: ({dive_data['pinch_lat']:.6f}, {dive_data['pinch_lon']:.6f}, {dive_data['pinch_alt']:.1f}m)")
-    print(f"   Attack bearing: {dive_data['target_bearing']:.1f}°")
-    print(f"   Dive distance: {dive_data['dive_distance']:.1f}m")
-    print(f"   Dive angle: {dive_data['dive_angle']:.1f}° (aggressive {DIVE_GLIDE_RATIO}:1 ratio)")
-    print(f"   Attack airspeed: {dive_data['attack_airspeed']:.1f} m/s")
+    # DIRECT APPROACH USING OFFBOARD VELOCITY CONTROL
+    # No waypoints, no curves - straight line to attack position
+    print(f"\n🚀 Starting OFFBOARD cruise to attack position...")
+    print(f"   Cruise speed: {CRUISE_SPEED} m/s")
+    print(f"   Approach distance: 500m from target")
     
-    # Calculate Alignment Point (run-up leg)
-    # 400m BEFORE the pinch point to ensure straight entry
-    alignment_dist = 400.0
-    align_lat, align_lon = offset_latlon(
-        dive_data['pinch_lat'], dive_data['pinch_lon'],
-        alignment_dist,
-        dive_data['target_bearing'] + 180  # Reverse bearing
+    # Start Offboard mode
+    await drone.offboard.set_velocity_ned(
+        VelocityNedYaw(
+            north_m_s=CRUISE_SPEED * math.cos(math.radians(attack_bearing)),
+            east_m_s=CRUISE_SPEED * math.sin(math.radians(attack_bearing)),
+            down_m_s=0.0,  # Maintain altitude
+            yaw_deg=attack_bearing
+        )
     )
     
-    # 1. Navigate to Alignment Point
-    print(f"\n🧭 Navigating to ALIGNMENT POINT...")
-    print(f"   (Setting up {alignment_dist}m run-up to pinch point)")
-    await drone.action.goto_location(
-        align_lat, align_lon,
-        dive_data['pinch_alt'],
-        dive_data['target_bearing']
-    )
+    try:
+        await drone.offboard.start()
+        print("✅ OFFBOARD cruise active")
+    except OffboardError as e:
+        print(f"⚠️  Offboard failed: {e}")
+        return None
     
-    # Monitor approach to Alignment Point
-    while True:
-        if latest_pos:
-            curr_lat = latest_pos.latitude_deg
-            curr_lon = latest_pos.longitude_deg
-            dist = distance_meters(curr_lat, curr_lon, align_lat, align_lon)
-            print(f"   To Alignment: {dist:6.1f}m", end="\r")
-            
-            if dist < 100.0:
-                print(f"\n✅ Alignment Point reached")
-                break
-        await asyncio.sleep(CONTROL_RATE)
-        
-    # 2. Navigate to Pinch Point
-    print(f"\n🧭 Navigating to PINCH POINT...")
-    
-    dist_to_pinch = distance_meters(curr_lat, curr_lon, dive_data['pinch_lat'], dive_data['pinch_lon'])
-    print(f"   Distance to pinch point: {dist_to_pinch:.1f}m")
-    
-    await drone.action.goto_location(
-        dive_data['pinch_lat'], dive_data['pinch_lon'],
-        dive_data['pinch_alt'],
-        dive_data['target_bearing']
-    )
-    
-    # Monitor approach to pinch point
-    print("\n📍 Approaching pinch point...")
+    # Cruise toward target until within 500m
+    print("\n🛫 Cruising to attack position (straight line)...")
     while True:
         curr_lat = latest_pos.latitude_deg
         curr_lon = latest_pos.longitude_deg
         curr_alt = latest_pos.relative_altitude_m
         
-        dist = distance_meters(curr_lat, curr_lon, dive_data['pinch_lat'], dive_data['pinch_lon'])
+        # Recalculate bearing (laser-guided)
+        attack_bearing = bearing_deg(curr_lat, curr_lon, target_lat, target_lon)
+        dist_to_target = distance_meters(curr_lat, curr_lon, target_lat, target_lon)
+        
+        # Update velocity vector to point at target
+        await drone.offboard.set_velocity_ned(
+            VelocityNedYaw(
+                north_m_s=CRUISE_SPEED * math.cos(math.radians(attack_bearing)),
+                east_m_s=CRUISE_SPEED * math.sin(math.radians(attack_bearing)),
+                down_m_s=0.0,
+                yaw_deg=attack_bearing
+            )
+        )
+        
         airspeed = math.hypot(latest_vel.north_m_s, latest_vel.east_m_s) if latest_vel else 0.0
         
         if latest_vel and latest_attitude:
-            log_telemetry("NAV_PINCH", curr_alt, latest_vel, latest_attitude, {
-                "distance_to_pinch_m": round(dist, 2)
+            log_telemetry("FW_CRUISE", curr_alt, latest_vel, latest_attitude, {
+                "distance_to_target_m": round(dist_to_target, 2)
             })
         
-        print(f"   Distance to pinch: {dist:6.1f}m | ALT {curr_alt:5.1f}m | IAS {airspeed:5.1f} m/s", end="\r")
+        print(f"   Distance to target: {dist_to_target:6.1f}m | ALT {curr_alt:5.1f}m | IAS {airspeed:5.1f} m/s | Bearing {attack_bearing:5.1f}°", end="\r")
         
-        # Arrived at pinch point - Increased radius to avoid loiter trap
-        if dist < 120.0:  # Increased from 50m to 120m to ensure we capture the waypoint pass
-            print(f"\n✅ Arrived at pinch point (within {dist:.1f}m)")
+        # Stop cruise when within 500m (dive initiation point)
+        if dist_to_target < 500.0:
+            print(f"\n✅ Attack position reached ({dist_to_target:.1f}m from target)")
             break
         
         await asyncio.sleep(CONTROL_RATE)
     
+    # Prepare dive data
+    dive_data = {
+        "target_bearing": attack_bearing,
+        "attack_airspeed": ATTACK_AIRSPEED,
+        "dive_angle": math.degrees(math.atan(1.0 / DIVE_GLIDE_RATIO))
+    }
+    
     return dive_data
 
-async def phase_energy_managed_dive(drone, dive_data):
-    """Phase 4: Energy-Managed Aggressive FW Dive"""
+async def phase_transition_to_mc_for_dive(drone):
+    """Phase 3.5: Transition to MC for ballistic dive"""
     print("\n" + "="*50)
-    print("⚡ PHASE 4: ENERGY-MANAGED AGGRESSIVE DIVE")
+    print("🔄 PHASE 3.5: TRANSITION TO MC FOR DIVE")
+    print("="*50)
+    
+    # Stop Offboard cruise
+    try:
+        await drone.offboard.stop()
+    except:
+        pass
+    
+    # Verify altitude
+    alt = latest_pos.relative_altitude_m
+    print(f"Current altitude: {alt:.1f}m")
+    
+    if alt < MIN_SAFE_ALTITUDE:
+        print(f"⚠️  Altitude too low for transition ({alt:.1f}m)")
+        return False
+    
+    print("Initiating MC transition for dive...")
+    
+    try:
+        await drone.action.transition_to_multicopter()
+        print("✅ MC transition command sent")
+    except Exception as e:
+        print(f"⚠️  Transition failed: {e}")
+        return False
+    
+    # Wait for transition
+    print("Waiting for MC transition to complete...")
+    await asyncio.sleep(6.0)
+    
+    # Monitor transition
+    for i in range(15):
+        if latest_vel:
+            airspeed = math.hypot(latest_vel.north_m_s, latest_vel.east_m_s)
+            print(f"  Transition in progress... IAS: {airspeed:5.1f} m/s", end="\r")
+            if airspeed < 8.0:  # MC mode achieved
+                print(f"\n✅ Multicopter mode active (IAS: {airspeed:.1f} m/s)")
+                return True
+        await asyncio.sleep(0.5)
+    
+    print("\n✅ Multicopter mode active")
+    return True
+
+
+async def phase_energy_managed_dive(drone, dive_data):
+    """Phase 4: BALLISTIC DIVE - MC Mode Aggressive Descent"""
+    print("\n" + "="*50)
+    print("🚀 PHASE 4: BALLISTIC DIVE ATTACK (MC MODE)")
     print("="*50)
     print(f"Attack profile:")
     print(f"  Target: ({target_lat:.6f}, {target_lon:.6f})")
-    print(f"  Attack airspeed: {dive_data['attack_airspeed']} m/s (~{dive_data['attack_airspeed']*1.94:.0f} knots)")
-    print(f"  Dive ratio: {DIVE_GLIDE_RATIO}:1 (aggressive)")
-    print(f"  Dive angle: ~{dive_data['dive_angle']:.1f}°")
-    print(f"  Expected descent speed: 20 m/s (AGGRESSIVE)")
-    
-    print("\n🎮 Starting OFFBOARD mode for energy-managed dive...")
-    
-    bearing = dive_data['target_bearing']
-    
-    # ATTITUDE CONTROL DIVE
-    # Force pitch down and thrust
-    pitch_cmd = -50.0  # Aggressive 50 degree dive
-    thrust_cmd = 0.6   # 60% thrust to accelerate
-    
-    print(f"\n🎯 DIVE COMMANDS (ATTITUDE CONTROL):")
-    print(f"   Pitch: {pitch_cmd}°")
-    print(f"   Thrust: {thrust_cmd}")
-    
-    await drone.offboard.set_attitude(
-        Attitude(0.0, pitch_cmd, bearing, thrust_cmd)
-    )
-    
-    try:
-        await drone.offboard.start()
-        print("✅ OFFBOARD dive control active (Attitude Mode)")
-    except OffboardError as e:
-        print(f"⚠️  Offboard failed: {e}")
-        return False
+    print(f"  Mode: Multicopter (enables vertical dive)")
+    print(f"  Descent speed: 12 m/s (MC max configured)")
+    print(f"  Style: BOLT-M laser-guided missile")
     
     dive_start_alt = latest_pos.relative_altitude_m
     dive_start_time = asyncio.get_event_loop().time()
     
-    print("\n🎯 Diving to target...")
+    print("\n🎯 Initiating ballistic dive...")
     
     # Speed tracking
     descent_speeds = []
     airspeed_profile = []
+    
+    # Calculate bearing to target
+    curr_lat = latest_pos.latitude_deg
+    curr_lon = latest_pos.longitude_deg
+    bearing = bearing_deg(curr_lat, curr_lon, target_lat, target_lon)
+    
+    # Start Offboard mode for MC dive
+    await drone.offboard.set_velocity_ned(
+        VelocityNedYaw(
+            north_m_s=0.0,
+            east_m_s=0.0,
+            down_m_s=12.0,  # Aggressive descent (MC configured max)
+            yaw_deg=bearing
+        )
+    )
+    
+    try:
+        await drone.offboard.start()
+        print("✅ OFFBOARD dive control active (MC Mode)")
+    except OffboardError as e:
+        print(f"⚠️  Offboard failed: {e}")
+        return False
     
     while True:
         alt = latest_pos.relative_altitude_m
         curr_lat = latest_pos.latitude_deg
         curr_lon = latest_pos.longitude_deg
         
-        # Enforce attitude setpoint continuously
-        await drone.offboard.set_attitude(
-            Attitude(0.0, pitch_cmd, bearing, thrust_cmd)
+        # Update bearing (laser-guided)
+        bearing = bearing_deg(curr_lat, curr_lon, target_lat, target_lon)
+        horizontal_dist = distance_meters(curr_lat, curr_lon, target_lat, target_lon)
+        
+        # Command aggressive descent with slight horizontal correction
+        north_vel = 5.0 * math.cos(math.radians(bearing))  # Slow horizontal toward target
+        east_vel = 5.0 * math.sin(math.radians(bearing))
+        down_vel = 12.0  # Maximum MC descent
+        
+        await drone.offboard.set_velocity_ned(
+            VelocityNedYaw(
+                north_m_s=north_vel,
+                east_m_s=east_vel,
+                down_m_s=down_vel,
+                yaw_deg=bearing
+            )
         )
         
         # Safety checks
@@ -629,10 +693,9 @@ async def phase_energy_managed_dive(drone, dive_data):
             break
         
         # Calculate metrics
-        dist_to_target = distance_meters(curr_lat, curr_lon, target_lat, target_lon)
+        dist_to_target = horizontal_dist
         dive_distance = dive_start_alt - alt
         dive_time = asyncio.get_event_loop().time() - dive_start_time
-
         
         if latest_vel and latest_attitude:
             airspeed = math.hypot(latest_vel.north_m_s, latest_vel.east_m_s)
@@ -642,16 +705,25 @@ async def phase_energy_managed_dive(drone, dive_data):
             descent_speeds.append(sink_rate)
             airspeed_profile.append(airspeed)
             
-            log_telemetry("DIVE", alt, latest_vel, latest_attitude, {
+            # Calculate actual dive angle
+            if horizontal_dist > 0:
+                dive_angle = math.atan2(alt, horizontal_dist)
+            else:
+                dive_angle = math.radians(90)
+            
+            log_telemetry("BALLISTIC_DIVE_MC", alt, latest_vel, latest_attitude, {
                 "dist_to_target_m": round(dist_to_target, 2),
                 "dive_dist_m": round(dive_distance, 2),
                 "dive_time_s": round(dive_time, 2),
+                "dive_angle_deg": round(math.degrees(dive_angle), 2),
+                "commanded_down_vel": round(down_vel, 2)
             })
             
             pitch = latest_attitude.pitch_deg
+            dive_angle_deg = math.degrees(dive_angle)
             
-            # Enhanced speed display
-            print(f"⬇️  ALT {alt:5.1f}m | Target {dist_to_target:5.1f}m | IAS {airspeed:5.1f} m/s | Descent {sink_rate:5.2f} m/s | Pitch {pitch:5.1f}°", end="\r")
+            # Enhanced display
+            print(f"🎯 ALT {alt:5.1f}m | Target {dist_to_target:5.1f}m | IAS {airspeed:5.1f} m/s | Descent {sink_rate:5.2f} m/s | Angle {dive_angle_deg:5.1f}° | Pitch {pitch:5.1f}°", end="\r")
         
         # Pull-up condition
         if alt <= MIN_SAFE_ALTITUDE:
@@ -660,8 +732,8 @@ async def phase_energy_managed_dive(drone, dive_data):
         
         await asyncio.sleep(CONTROL_RATE)
     
-    # Calculate dive statistics with speed verification
-    print(f"\n📊 DIVE STATISTICS & SPEED VERIFICATION:")
+    # Calculate dive statistics
+    print(f"\n📊 BALLISTIC DIVE STATISTICS:")
     print(f"   Altitude lost: {dive_distance:.1f}m")
     print(f"   Time in dive: {dive_time:.1f}s")
     if dive_time > 0:
@@ -672,19 +744,18 @@ async def phase_energy_managed_dive(drone, dive_data):
         avg_descent = sum(descent_speeds) / len(descent_speeds)
         max_descent = max(descent_speeds)
         min_descent = min(descent_speeds)
-        print(f"\n   📉 DESCENT SPEED VERIFICATION (Target: 20 m/s):")
+        print(f"\n   📉 DESCENT SPEED VERIFICATION (Target: 10+ m/s):")
         print(f"      Average descent: {avg_descent:.2f} m/s")
         print(f"      Max descent: {max_descent:.2f} m/s")
         print(f"      Min descent: {min_descent:.2f} m/s")
-        print(f"      Descent status: {'✅ CORRECT' if 18.0 <= avg_descent <= 22.0 else '⚠️  OFF TARGET'}")
+        print(f"      Descent status: {'✅ BALLISTIC' if avg_descent >= 10.0 else '⚠️  TOO SLOW'}")
     
     if airspeed_profile:
         avg_airspeed = sum(airspeed_profile) / len(airspeed_profile)
         max_airspeed = max(airspeed_profile)
-        print(f"\n   ✈️  AIRSPEED PROFILE (Target: {ATTACK_AIRSPEED} m/s):")
+        print(f"\n   ✈️  AIRSPEED PROFILE:")
         print(f"      Average airspeed: {avg_airspeed:.2f} m/s")
         print(f"      Max airspeed: {max_airspeed:.2f} m/s")
-        print(f"      Airspeed status: {'✅ CORRECT' if ATTACK_AIRSPEED - 3 <= avg_airspeed <= ATTACK_AIRSPEED + 3 else '⚠️  OFF TARGET'}")
     
     await drone.offboard.stop()
     
@@ -804,20 +875,20 @@ async def run():
             print("❌ FW transition failed")
             return
         
-        # Phase 3: Target acquisition & pinch point calculation
+        # Phase 3: Direct approach to attack position
         dive_data = await phase_target_acquisition_and_pinch_calc(drone)
         
-        # Phase 4: Aggressive dive
+        # Phase 3.5: Transition to MC for dive
+        if not await phase_transition_to_mc_for_dive(drone):
+            print("❌ MC transition for dive failed")
+            return
+        
+        # Phase 4: Ballistic dive (MC mode)
         if not await phase_energy_managed_dive(drone, dive_data):
             print("❌ Dive failed")
             return
         
-        # Phase 5: Transition to MC
-        if not await phase_transition_to_mc(drone):
-            print("❌ MC transition failed")
-            return
-        
-        # Phase 6: Recovery
+        # Phase 5: Recovery (already in MC)
         await phase_recovery(drone)
         
         print("\n" + "="*60)

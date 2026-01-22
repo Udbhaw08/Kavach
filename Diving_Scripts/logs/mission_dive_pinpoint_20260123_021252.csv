@@ -1,0 +1,2 @@
+timestamp,phase,altitude_m,vertical_speed_m_s,airspeed_m_s,roll_deg,pitch_deg,yaw_deg
+2026-01-23T02:10:21.274843,CLIMB,198.21,0.0,0.03,-0.06,0.18,142.53
