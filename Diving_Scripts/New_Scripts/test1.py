@@ -114,7 +114,7 @@ async def run():
     await asyncio.sleep(30)
     
     print("-- STARTING DIVE ATTACK")
-    print("-- Setting initial Setpoint (Flat)")
+    print("-- Setting initial Setpoint (Flat)") 
     # We must send a setpoint before starting offboard mode
     await drone.offboard.set_attitude(Attitude(0.0, 0.0, 0.0, 0.6))
     
