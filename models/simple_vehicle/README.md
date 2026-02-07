@@ -1,83 +1,57 @@
-# Simple Vehicle Gazebo Model
+# Ultra-Realistic Tank Model for YOLO Detection
 
-This is a simple wheeled vehicle model for Gazebo simulation.
+## Overview
+This model has been designed specifically for YOLO object detection with realistic military tank features.
 
-## Model Structure
+## Specifications
+- **Overall Dimensions**: ~10m length × 12m width × 6.5m height
+- **Total Components**: 25+ detailed parts
+- **Color Scheme**: Military olive green with variations
 
-The model consists of:
-- **Base Platform**: 2.0m x 1.2m x 0.3m rectangular base
-- **Four Wheels**: Cylindrical wheels (radius: 0.25m, width: 0.15m)
-- **Main Body**: 0.8m x 0.8m x 0.7m box on top of the platform
-- **Turret/Cargo Box**: 0.6m x 0.3m x 0.25m box on the front
+## Key Features
 
-## How to Use
+### Main Structure
+1. **Lower Hull** (9m × 11m × 2m) - Main chassis
+2. **Upper Hull** (7m × 10m × 1m) - Superstructure
+3. **Main Turret** (5.5m × 7.5m × 2.6m) - Rotating turret base
+4. **Turret Mantlet** (1.8m × 4m × 2m) - Front armor
 
-### Option 1: Add to Gazebo Model Path
+### Armament
+5. **Main Gun Barrel** (7.5m long, 0.3m diameter)
+6. **Muzzle Brake** (0.8m long, 0.4m diameter)
 
-1. Set the `GAZEBO_MODEL_PATH` environment variable:
-```bash
-export GAZEBO_MODEL_PATH=$GAZEBO_MODEL_PATH:/home/udbhaw/Kavach/models
-```
+### Crew Positions
+7. **Commander's Cupola** (1m radius cylinder)
+8. **Driver's Hatch** (0.5m radius)
 
-2. Add this line to your `~/.bashrc` to make it permanent:
-```bash
-echo 'export GAZEBO_MODEL_PATH=$GAZEBO_MODEL_PATH:/home/udbhaw/Kavach/models' >> ~/.bashrc
-source ~/.bashrc
-```
+### Running Gear
+9-16. **8 Road Wheels** (0.7m radius, 4 per side)
+17-18. **Track Assemblies** (9.5m × 1.2m, left and right)
 
-### Option 2: Copy to Default Gazebo Models Directory
+### Armor & Protection
+19. **Front Glacis** (angled at 20°)
+20-21. **Side Skirt Armor** (left and right)
 
-```bash
-mkdir -p ~/.gazebo/models
-cp -r /home/udbhaw/Kavach/models/simple_vehicle ~/.gazebo/models/
-```
+### Engine & Exhaust
+22. **Engine Deck** (1.5m × 10m)
+23-24. **Exhaust Grilles** (left and right)
 
-## Using in a World File
+### Storage
+25-26. **Turret Storage Boxes** (left and right)
 
-Add the model to your Gazebo world file (`.world`):
+## Color Palette (for YOLO training)
+- **Main Hull**: RGB(0.25, 0.32, 0.20) - Olive green
+- **Turret**: RGB(0.23, 0.30, 0.18) - Darker green
+- **Gun Barrel**: RGB(0.16, 0.16, 0.16) - Dark gray/black
+- **Tracks**: RGB(0.12, 0.12, 0.12) - Black
+- **Wheels**: RGB(0.10, 0.10, 0.10) - Dark black
 
-```xml
-<model name="my_vehicle">
-  <include>
-    <uri>model://simple_vehicle</uri>
-  </include>
-  <pose>0 0 0 0 0 0</pose>
-</model>
-```
+## YOLO Detection Features
+✓ High contrast between components
+✓ Distinctive silhouette (turret + gun barrel)
+✓ Realistic proportions matching real tanks
+✓ Multiple detection points (turret, barrel, tracks, wheels)
+✓ Proper specular highlights for depth perception
 
-## Testing the Model
-
-### Launch Gazebo with the model:
-
-```bash
-cd /home/udbhaw/Kavach/models
-gazebo --verbose
-```
-
-Then insert the model through Gazebo's GUI:
-1. Click on the "Insert" tab in the left panel
-2. Look for "Simple Vehicle" in the model list
-3. Click and place it in the world
-
-### Or create a test world file:
-
-```bash
-# See test_vehicle.world in this directory
-gazebo test_vehicle.world
-```
-
-## Customization
-
-You can modify the model by editing `model.sdf`:
-- Change dimensions in the `<size>` tags
-- Adjust positions with `<pose>` tags
-- Modify colors in the `<material>` sections
-- Add physics properties by setting `<static>false</static>` and adding inertial properties
-- Add sensors, plugins, or additional links as needed
-
-## Model Properties
-
-- **Type**: Static (non-moving) by default
-- **Materials**: Gray color scheme with varying shades for different parts
-- **Collision**: Enabled for all parts
-- **Physics**: Static (change to dynamic if you want to add wheels/motors)
+## Usage
+Load this model in your Gazebo world to test YOLO detection from the VTOL camera.
