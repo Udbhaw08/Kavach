@@ -10,11 +10,10 @@ Z=${3:-115}  # Up (NED -Z)
 MODEL_NAME="target_box"
 SDF_PATH="$(pwd)/models/target_box.sdf"
 
-# Create a simple red box SDF if it doesn't exist
+# Create/Overwrite the red box SDF to ensure size is updated
 mkdir -p models
-if [ ! -f "$SDF_PATH" ]; then
-    echo "Creating simple box model at $SDF_PATH..."
-    cat <<EOF > "$SDF_PATH"
+echo "Creating/Updating simple box model at $SDF_PATH (Size: 2x2x2)..."
+cat <<EOF > "$SDF_PATH"
 <?xml version="1.0" ?>
 <sdf version="1.5">
   <model name="$MODEL_NAME">
@@ -23,7 +22,7 @@ if [ ! -f "$SDF_PATH" ]; then
       <visual name="visual">
         <geometry>
           <box>
-            <size>1 1 1</size>
+            <size>2 2 2</size>
           </box>
         </geometry>
         <material>
@@ -36,7 +35,7 @@ if [ ! -f "$SDF_PATH" ]; then
       <collision name="collision">
         <geometry>
           <box>
-            <size>1 1 1</size>
+            <size>2 2 2</size>
           </box>
         </geometry>
       </collision>
@@ -44,7 +43,6 @@ if [ ! -f "$SDF_PATH" ]; then
   </model>
 </sdf>
 EOF
-fi
 
 echo "Spawning target box at X=$X, Y=$Y, Z=$Z (ENU Frame)"
 gz model --spawn-file="$SDF_PATH" --model-name="$MODEL_NAME" -x "$X" -y "$Y" -z "$Z"
